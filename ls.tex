@@ -1,0 +1,137 @@
+\documentclass{article}
+
+\usepackage[american]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage{mysymbols}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+\title{On the Lercier-Sirvent algorithm}
+\author{Luca De Feo}
+
+\begin{document}
+
+\maketitle
+
+\paragraph{Introduction}
+The Lercier-Sirvent (LS) algorithm \cite{lercier+sirvent08} takes as
+input two elliptic curves over a finite field (defined by a
+Weierstrass equation) and a prime $\ell$ and outputs, if it exists, an
+explicit isogeny of degree $\ell$ between them. It is a generalisation
+of the BMSS method \cite{bostan+morain+salvy+schost08} to any
+characteristic.
+
+The original paper presenting LS only treats the case $p\ge5$. It is
+not difficult to extend the algorithm to the case $p=3$ (chapter 8 of
+my PhD thesis \cite{df+thesis} partly does the job), but the case
+$p=2$ is trickier.
+
+I'm gathering in this note the research I've done so far to adapt LS
+to the case $p=2$.
+
+\paragraph{BMSS}
+BMSS takes as input two curves given by models
+\begin{equation}
+  \label{eq:1}
+  \begin{gathered}
+    E \;:\; y^2 = x^3 + ax + b \eqdef f(x),\\
+    \tilde{E} \;:\; y^2 = x^3 + \tilde{a}x + \tilde{b} \eqdef \tilde{f}(x),
+  \end{gathered}
+\end{equation}
+and assumes that these models are $\ell$-normalized, i.e. that the
+$\ell$-isogeny $\I:E\to\tilde{E}$ is of the form
+\begin{equation}
+  \label{eq:2}
+  \I(x,y) = \left(\frac{g(x)}{h(x)}, y\left(\frac{g(x)}{h(x)}\right)'\right)
+\end{equation}
+(Elkies \cite{elkies98} gives formulas to obtain normalized models
+from the $\ell$-th modular polynomial). Plugging this equation into
+the Weierstrass equations gives the differential equation
+\begin{equation}
+  \label{eq:3}
+  f(x){\left(\frac{g}{h}\right)'}^2 = \tilde{f}\left(\frac{g}{h}\right).
+\end{equation}
+Set
+\begin{equation}
+  \label{eq:4}
+  S(x) = \sqrt{\frac{h(1/\sqrt{x})}{g(1/\sqrt{x})}}, \qquad \frac{1}{\sqrt{S(1/\sqrt{x})}} = \frac{g(x)}{h(x)},
+\end{equation}
+then $S$ satisfies the equation
+\begin{equation}
+  \label{eq:5}
+  \begin{gathered}
+    G(x){S'}^2 = H(S), \quad S(0) = 1,\quad\text{with}\\
+    G(x) = x^6f(1/x^2), \quad H(x) = x^6\tilde{f}(1/x^2).
+  \end{gathered}
+\end{equation}
+Then, computing the isogeny boils down to find a power series solution
+to this equation, invert the change of variables and reconstruct the
+rational fraction $\frac{g}{h}$. It is easy to realize that at least
+$4\ell-1$ coefficients of $S$ are needed in order to correctly compute
+the isogeny.
+
+\paragraph{Lercier-Sirvent}
+Solving the differential equation \eqref{eq:5} implies taking
+integrals, hence divisions by zero occur when $p<4\ell$. The idea of
+LS is to lift the coefficients in the $p$-adics in order to allow
+division by $p$: first the $j$-invariants of $E$ and $\tilde{E}$ are
+lifted in $\Q_q$, then Elkies' formulas are applied to obtain
+$\ell$-normalized models, finally BMSS is applied as above, yielding a
+solution in $\Q_q$ that can be reduced modulo $p$. 
+
+The key of the algorithm is that a precision of only $O(\log^2\ell)$
+$p$-adic digits is required to correctly compute the reduced
+isogeny. This bound is quite surprising and we will come back on it
+later.
+
+To also embed the case $p=3$, one considers curves given by equations
+\begin{equation}
+\label{eq:6}
+  \begin{gathered}
+    E \;:\; y^2 = x^3 + a_2x^2 + a_4x + a_6 \eqdef f(x),\\
+    \tilde{E} \;:\; y^2 = x^3 + \tilde{a_2}x^2 + \tilde{a_4}x + \tilde{a_6} \eqdef \tilde{f}(x),
+  \end{gathered}
+\end{equation}
+and all the previous equations are still verified, thus BMSS is
+applied exactly the same way. It is easy to modify Elkies' formulas to
+obtain $\ell$-normalized models of this form from the $\ell$-th
+modular polynomial, and the $p$-adic precision needed is easily seen
+to be the same as for $p\ge5$.
+
+\paragraph{Even characteristic}
+The case $p=2$ doesn't quite fit in this scheme. In this case, in fact, one must
+consider curves given by equations
+\begin{equation}
+\label{eq:6}
+  \begin{gathered}
+    E \;:\; y^2 + xy = f(x),\\
+    \tilde{E} \;:\; y^2 + xy = \tilde{f}(x).
+  \end{gathered}
+\end{equation}
+By the change of variables $y\mapsto y-x/2$, it is immediate that $S$
+satisfies the equation
+\begin{equation}
+  \label{eq:7}
+  (G(x) + x^2/4){S'}^2 = H(S) + S^2/4,
+\end{equation}
+but a quick implementation of the method immediately shows that a
+precision of $O(\log^2\ell)$ $p$-adic digits is no longer enough to
+find a solution.
+
+The reasons for the increased loss of $p$-adic precision are multiple.
+
+
+
+\bibliographystyle{plain}
+\bibliography{defeo}
+
+\end{document}
+
+
+% Local Variables:
+% mode:TeX-PDF
+% mode:reftex
+% mode:flyspell
+% ispell-local-dictionary:"american"
+% End:
+
