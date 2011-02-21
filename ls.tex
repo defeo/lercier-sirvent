@@ -5,6 +5,11 @@
 \usepackage{mysymbols}
 \usepackage{amsmath}
 \usepackage{amssymb}
+\usepackage{algorithmic}
+
+\DeclareMathOperator{\rev}{rev}
+\DeclareMathOperator{\Dplus}{\Delta^{{}^{\kern-0.5ex +}}}
+\DeclareMathOperator{\Dminus}{\Delta^{{}^{\kern-0.5ex -}}}
 
 \title{On the Lercier-Sirvent algorithm}
 \author{Luca De Feo}
@@ -81,7 +86,7 @@ solution in $\Q_q$ that can be reduced modulo $p$.
 
 The key of the algorithm is that a precision of only $O(\log^2\ell)$
 $p$-adic digits is required to correctly compute the reduced
-isogeny. This bound is quite surprising and we will come back on it
+isogeny. This bound is quite surprising and I will come back on it
 later.
 
 To also embed the case $p=3$, one considers curves given by equations
@@ -92,7 +97,7 @@ To also embed the case $p=3$, one considers curves given by equations
     \tilde{E} \;:\; y^2 = x^3 + \tilde{a_2}x^2 + \tilde{a_4}x + \tilde{a_6} \eqdef \tilde{f}(x),
   \end{gathered}
 \end{equation}
-and all the previous equations are still verified, thus BMSS is
+then all the previous equations are still verified, thus BMSS is
 applied exactly the same way. It is easy to modify Elkies' formulas to
 obtain $\ell$-normalized models of this form from the $\ell$-th
 modular polynomial, and the $p$-adic precision needed is easily seen
@@ -102,23 +107,461 @@ to be the same as for $p\ge5$.
 The case $p=2$ doesn't quite fit in this scheme. In this case, in fact, one must
 consider curves given by equations
 \begin{equation}
-\label{eq:6}
+  \label{eq:9}
   \begin{gathered}
-    E \;:\; y^2 + xy = f(x),\\
-    \tilde{E} \;:\; y^2 + xy = \tilde{f}(x).
+    E \;:\; y^2 + xy = F(x),\\
+    \tilde{E} \;:\; y^2 + xy = \tilde{F}(x).
   \end{gathered}
 \end{equation}
 By the change of variables $y\mapsto y-x/2$, it is immediate that $S$
 satisfies the equation
 \begin{equation}
   \label{eq:7}
-  (G(x) + x^2/4){S'}^2 = H(S) + S^2/4,
+  \begin{gathered}
+    G(x){S'}^2 = H(S), \quad S(0) = 1,\quad\text{with}\\
+    G(x) = x^6F(1/x^2) + x^2/4, \quad H(x) = x^6\tilde{F}(1/x^2) + x^2/4,
+  \end{gathered}
 \end{equation}
 but a quick implementation of the method immediately shows that a
 precision of $O(\log^2\ell)$ $p$-adic digits is no longer enough to
 find a solution.
 
-The reasons for the increased loss of $p$-adic precision are multiple.
+The reasons for the increased loss of $p$-adic precision are
+multiple. To understand them, we must look at the details of how the
+differential equation is solved by a Newton iteration; but first I
+shall discuss the reasons behind the choice of the function $S$ and
+give an alternative function that yields a faster algorithm.
+
+
+\paragraph{An algorithm twice as fast}
+Let's go back to the odd characteristic case.  Let $\I_x =
+\frac{g}{h}$, we would like to compute the power series expansion of
+$\I_x$ around a point $x_0$. For any $x_0\in\F_q$, it is not immediate
+to compute the value of $\I_x(x_0)$, however, since $\I$ is an
+isogeny, we know that $\I_x(\0_E) = \0_{\tilde{E}}$. Stated otherwise,
+we know that
+\begin{equation}
+  \label{eq:12}
+  T(x) \eqdef \frac{1}{\I_x(1/x)} \qquad\text{verifies}\qquad T(0) = 0.
+\end{equation}
+By substituting $1/T(1/x)$ for $I_x$ in Eq.~\eqref{eq:3}, we obtain
+the differential equation
+\begin{equation}
+  \label{eq:13}
+  \rev f(x) {T'}^2 = \frac{T}{x}\rev\tilde f(T),
+\end{equation}
+where for a polynomial $A(x)$ I denote by $\rev A(x)$ its
+\emph{reverse polynomial} $x^{\deg A}A(1/x)$. Observe that this
+equation implies $T(x) = x + O(x^2)$.
+
+Instead of solving for $T$, BMSS define the function $S(x) =
+\sqrt{T(x^2)}$ and solve for it. The reasons for this choice are not
+completely clear to me, but I guess that they come from the fact that
+the Weierstrass $\wp$-function has a pole of order $2$ at
+infinity. Indeed the paper first gives a Newton iteration to compute
+the $\wp$-function of $E$: to avoid problems with the negative
+valuation of $\wp$, they consider the series
+\begin{equation}
+  \label{eq:10}
+  Q(x) = \frac{1}{\wp(x)} = x^2 + O(x^6), \quad R(x) = \sqrt{Q(x)} = x + O(x^5),
+\end{equation}
+and chose to compute $R$ by a Newton iteration, probably because the
+algorithm they give in Section~2.4 of their paper requires the
+solution to have a non-zero coefficient of degree $1$, or maybe
+because they consider the Newton iteration to be more efficient for
+$R$ than for $Q$. François or Éric may tell me more about this.
+
+Whatever the reason for considering $1/\sqrt{\wp}$ is, once this
+choice is made, it is quite natural to consider $S$, because then the
+equation
+\begin{equation}
+  \label{eq:11}
+  \tilde{R} = S\circ R
+\end{equation}
+is verified. There is also, obviously, the fact that their algorithm
+cannot solve Eq.~\eqref{eq:13}.
+
+I shall now give two algorithms to find a solution to
+Eq.~\eqref{eq:13}, a classic quadratic iteration and a Newton
+iteration. In both cases, it is important to note that only $2\ell$
+coefficients of $T$ are needed in order to deduce $\frac{g}{h}$, as
+opposed to the $4\ell-1$ coefficients of $S$. Thus we have a twofold
+speed-up for the Newton iteration (fourfold for the quadratic
+iteration).
+
+\paragraph{Quadratic iteration}
+We already know that $T(x) = x + O(x^2)$. For any $i>1$, by injecting
+$T = t + zx^i + O(x^{i+1})$ in the equation we have
+\begin{equation}
+  \label{eq:14}
+  \rev f(x)(t'^2 + 2izx^{i-1}) = zx^{i-1} + \frac{t}{x}\rev\tilde{f}(t) + O(x^i),
+\end{equation}
+hence
+\begin{equation}
+  \label{eq:15}
+  (2i-1)zx^{i-1} = \frac{t}{x}\rev\tilde{f}(t) - \rev f(x)t'^2 + O(x^i).
+\end{equation}
+The right hand side is a power series of valuation $0$ (remember that
+$t$ has valuation $1$), hence $T$ can be easily computed to precision
+$d$ using $O(d^2)$ operations. 
+
+Observe that $2i-1$ runs through all the odd numbers as $i$ increases,
+thus when computing a solution in $Q_q[[x]]$, at least a digit of
+$p$-adic precision is lost every $p$ iterations (assuming $p$ is
+odd). Thus an initial $p$-adic precision of at least $n/p$ digits
+is needed in order to compute $T \bmod p$ to precision $n$.
+
+When $p=2$, this iteration seems to loose no $p$-adic precision. No
+surprises here, however: the series $\tilde{f}$ and $1/\rev f$ have
+negative $p$-adic valuation, thus a loss of precision happens when
+multiplying by them. We'll see later how to bound this loss of
+precision.
+
+
+\paragraph{Newton iteration}
+Using standard techniques I now give a Newton iteration for
+Eq.~\eqref{eq:13}; matters are slightly complicated by the fact that
+the formulae make appear series of negative valuation. First linearize
+the equation: let $d\ge1$, then
+\begin{equation}
+  \label{eq:17}
+  \begin{gathered}
+    T = t + O(x^{d+1}), \qquad T = t + h + O(x^{2d+1}),\\
+    \rev f(x) \left({t'}^2 + 2t'h'\right) = \frac{t+h}{x}\left(\rev\tilde{f}(t) + (\rev\tilde{f})'(t)h\right) + O(x^{2d}).
+  \end{gathered}
+\end{equation}
+Thus
+\begin{equation}
+  \label{eq:18}
+  h' = \frac{\rev\tilde{f}(t) + t(\rev\tilde{f})'(t)}{x\rev f(x)2t'}h + 
+  \frac{\frac{t}{x}\rev\tilde{f}(t) - {t'}^2\rev f(x)}{\rev f(x)2t'} +
+  O(x^{2d}),
+\end{equation}
+and the solution to this equation is given by the classical formula by
+Brent \& Kung \cite{brent+kung}:
+\begin{equation}
+  \label{eq:19}
+  h = \frac{1}{j(x)} \int \frac{\frac{t}{x}\rev\tilde{f}(t) - {t'}^2\rev f(x)}{\rev f(x)2t'} j(x) + O(x^{2d+1}),
+\end{equation}
+where
+\begin{equation}
+  \label{eq:20}
+  j(x) = \exp\left(-\int \frac{\rev\tilde{f}(t) + t(\rev\tilde{f})'(t)}{x\rev f(x)2t'}\right).
+\end{equation}
+
+I follow Lercier and Sirvent \cite{lercier+sirvent08} in remarking
+that $t$ satisfies Eq.~\eqref{eq:13} modulo $x^d$, thus
+\begin{equation}
+  \label{eq:21}
+  \frac{t}{x}\rev\tilde{f}(t) - {t'}^2\rev f(x) = O(x^d).
+\end{equation}
+Hence, $j(x)$ must only be known modulo $x^d$ in order to compute
+$h$. By the previous equation
+\begin{equation}
+  \label{eq:22}
+  \frac{1}{t'} = \frac{xt'\rev f(x)}{t\rev\tilde{f}(t)}  + O(x^d),
+\end{equation}
+thus
+\begin{equation}
+  \label{eq:23}
+  j(x) = \exp\left(-\int \frac{t'\rev\tilde{f}(t) + t(\rev\tilde{f})'(t)t'}{2t\rev\tilde{f}(t)}\right) + O(x^d)
+\end{equation}
+and finally
+\begin{equation}
+  \label{eq:24}
+  \exp\left(-\frac{1}{2}\int\frac{\left(t\rev\tilde{f}(t)\right)'}{t\rev\tilde{f}(t)}\right) =
+  \exp\left(-\frac{1}{2}\log(t\rev\tilde{f}(t))\right) = \frac{1}{\sqrt{t\rev\tilde{f}(t)}}.
+\end{equation}
+Unfortunately, the above series has a pole in $0$, thus we cannot
+compute its expansion around this point. Let us set instead 
+\begin{equation}
+  \label{eq:25}
+  j(x) + O (x^d) = \frac{1}{\sqrt{t\rev\tilde{f}(t)}} = \frac{1}{\sqrt{\frac{t}{x}\rev\tilde{f}(t)}}\frac{1}{\sqrt{x}}
+\end{equation}
+and handle the factor $1/\sqrt{x}$ symbolically. Using again
+Eq.~\eqref{eq:21}, we have
+\begin{equation}
+  \label{eq:30}
+  \sqrt{\frac{t}{x}\rev\tilde{f}(t)} = t'\sqrt{\rev f(x)} + O(x^d).
+\end{equation}
+Hence we get
+\begin{equation}
+  \label{eq:26}
+  h = t'\sqrt{\rev f(x)}\sqrt{x}
+  \int \frac{\frac{t}{x}\rev\tilde{f}(t) - {t'}^2\rev f(x)}{2{t'}^2\sqrt{\rev f(x)}^3 + O(x^d)} \frac{1}{\sqrt{x}}
+  + O(x^{2d+1});
+\end{equation}
+setting
+\begin{equation}
+  \label{eq:27}
+  k(x) = \frac{\frac{t}{x}\rev\tilde{f}(t) - {t'}^2\rev f(x)}{{t'}^2\sqrt{\rev f(x)}^3 + O(x^d)},
+\end{equation}
+we can compute its power series expansion to precision $2d$. Let $k=\sum_{i\ge0} k_ix^i$, then
+\begin{equation}
+  \label{eq:28}
+  K(x) = \sqrt{x}\int\frac{k(x)}{2\sqrt{x}} = \sqrt{x}\int\sum_{i\ge0}\frac{k_i}{2}x^{i-1/2} =
+  \sum_{i\ge0}\frac{k_i}{2i+1}x^{i+1},
+\end{equation}
+and finally
+\begin{equation}
+  \label{eq:29}
+  T + O(x^{2d+1}) = t+h = t+K(x)t'\sqrt{\rev f(x)}.
+\end{equation}
+
+\begin{figure}
+  \centering
+  \begin{algorithmic}[1]
+    \REQUIRE $f,\tilde f$, a bound $n$ on the precision,
+    \ENSURE $T=1/\I_x(1/x) + O(x^n)$.
+    \STATE $d \la 1$;
+    \STATE $T \la x + O(x^2)$;
+    \WHILE{$d < n$}
+    \STATE $U \la 1/(\rev f(x){T'}^2) + O(x^d)$;
+    \STATE $V \la \sqrt{\rev f(x)} + O(x^d)$;
+    \STATE $J \la 1/V + O(x^d)$;
+    \STATE $k \la \left(\frac{T}{x}\rev\tilde{f}(T) - \rev f(x){T'}^2\right)UJ + O(x^{2d})$;
+    \STATE \label{alg:newton:int}$K \la \sqrt{x}\int\frac{k}{2\sqrt{x}} + O(x^{2n+1})$;
+    \STATE $T \la T + T'VK + O(x^{2n+1})$;
+    \STATE $d \la 2n$;
+    \ENDWHILE
+  \end{algorithmic}
+  \caption{Newton iteration for the equation $\rev f(x){T'}^2=\frac{T}{x}\rev\tilde{f}(T)$.}
+  \label{alg:newton}
+\end{figure}
+
+The method is summarized in Figure~\ref{alg:newton}.  The series $U$,
+$V$ and $J$ used as intermediate computations by the algorithm, can
+all be computed efficiently using classical Newton iterations for the
+inverse and the square root of power series. It is then easily seen
+that each iteration does a fixed number of multiplication of
+polynomials of degree $d$ (remember that $k(x) = O(x^d)$), thus an
+iteration costs $cM(d) + O(d)$ and the whole algorithm costs $cM(n/2)
++ O(n + M(n/4))$ operations in $\Q_q$ for some constant $c$. Also observe
+that Eq.~\eqref{eq:30} was chosen so to make the constant $c$ smaller.
+
+\paragraph{$p$-adic precision of the Newton iteration}
+I continue with the analysis of the odd characteristic case. As
+already observed by Lercier and Sirvent, something surprising happens
+when analyzing the $p$-adic precision required by the Newton
+iteration. While the quadratic iteration requires a number of $p$-adic
+digits at least linear in the number of coefficients of the power
+series, the Newton iteration only requires $O(\log^2 n)$ digits. The
+proof rests on three key facts:
+\begin{enumerate}
+\item Each of the intermediate results is a power series with
+  coefficients of non-negative valuation (i.e.\ it reduces modulo $p$
+  to a power series with coefficients in $\F_q$);
+\item The only computation which involves divisions by $p$ is the
+  integral at step~\ref{alg:newton:int};
+\item At the $i$-th iteration, divisions by at most $p^{O(i)}$
+  occur in the integral step.
+\end{enumerate}
+Putting things together, it is immediate that the precision of the
+coefficients of $T(x)$ can lower of at most $O(\log^2 n)$ during the
+whole process.
+
+The verification needed, is that indeed the computation of the
+intermediate series $U$, $V$ and $J$ does not introduce any division
+by $p$. This is readily seen using the classical Newton iteration for
+these series:
+\begin{align}
+  U &\la U(2 - \rev f(x){T'}^2U)  + O(x^d),\\
+  V &\la \frac{V + \rev f(x)J(2 - VJ)}{2}  + O(x^d),\\
+  J &\la J(2-VJ)  + O(x^d).
+\end{align}
+
+
+\paragraph{Controlling the $2$-adic precision in the quadratic iteration}
+I now come back to the case $p=2$ and stick to it until the end. Both
+of the algorithms above work for $p=2$ using the change of variables
+$y\mapsto y-x/2$; however, the bounds on the $p$-adic precision are no
+longer true. This is partly due to the fact that some of the series
+involved ($\rev f$ and $\rev\tilde{f}$, for example), have
+coefficients of negative valuation. To get rid of such series, let us
+consider curves defined over $Q_q$ with equations
+\begin{equation}
+  \label{eq:16}
+  \begin{gathered}
+    E \;:\; y^2 + xy = F(x),\\
+    \tilde{E} \;:\; y^2 + xy = \tilde{F}(x),
+  \end{gathered}
+\end{equation}
+such that $F$ and $\tilde{F}$ reduce modulo $2$. Then, it is well
+known that
+\begin{equation}
+  \label{eq:34}
+  \I_x \bmod 2 = x\left(\frac{P(x)}{Q(x)}\right)^2, \qquad
+  T \bmod 2 = x\left(\frac{\rev Q(x)}{\rev P(x)}\right)^2,
+\end{equation}
+for polynomials $P$ and $Q$ of degree $(\ell-1)/2$ (see, for example,
+Lercier's paper on computing isogenies in $\F_{2^n}$
+\cite{lercier96}). Hence $T\bmod 2$ is an odd power series, and $T$ is
+such that
+\begin{equation}
+  \label{eq:35}
+  T = \sum_{i\ge0}t_ix^i, \quad\text{with}\quad
+  v(t_{2i})\ge1,\;v(t_{2i+1})\ge0, \quad\text{for any $i\ge0$}.
+\end{equation}
+For convenience, I shall define
+\begin{equation}
+  \label{eq:36}
+  T_e = \sum_{i\ge0}\frac{t_{2i}}{2}x^{2i}, \quad\text{and}\quad
+  T_o = \sum_{i\ge0}t_{2i+1}x^{2i+1},
+\end{equation}
+so that $T=T_o+2T_e$.
+
+Applying the change of variables $y\mapsto y-x/2$, we have that
+$T=1/\I_x(1/x)$ satisfies
+\begin{equation}
+  \label{eq:31}
+  \left(\rev F(x) + \frac{x}{4}\right){T'}^2 = \frac{T}{x}\left(\rev\tilde{F}(T) + \frac{T}{4}\right).
+\end{equation}
+The members of this equation are power series of negative valuation,
+but, if we rewrite it as
+\begin{equation}
+  \label{eq:32}
+  \begin{gathered}
+    \rev F(x){T'}^2 = \frac{T}{x}\rev\tilde{F}(T) - \frac{1}{x}\frac{\Dplus T}{2}\frac{\Dminus T}{2},
+    \quad\text{where}\\
+    \Dplus T = xT' + T = \sum_{i\ge0}(i+1)t_ix^i,\\
+    \Dminus T = xT' - T = \sum_{i\ge0}(i-1)t_ix^i,
+  \end{gathered}
+\end{equation}
+then we have
+\begin{equation}
+  \label{eq:37}
+    \rev F(x){T'}^2 = \frac{T}{x}\rev\tilde{F}(T) -
+    \frac{1}{x}\left(\Dplus T_e + \frac{\Dplus T_o}{2}\right)\left(\Dminus T_e + \frac{\Dminus T_o}{2}\right),
+\end{equation}
+and no term in the equation has negative valuation (observe, in fact,
+that $T_o$ is an odd series).
+
+Now it is straightforward to write down the quadratic iteration. As
+before, if we set $T=t+t_ix^i+O(x^{i+1})$, we have
+\begin{equation}
+  \label{eq:38}
+  (2i-1)t_ix^{i-1} = 
+  \frac{t}{x}\rev\tilde{F}(t) - \frac{1}{x}\frac{\Dplus t}{2}\frac{\Dminus t}{2}
+  - \rev F(x)t'^2 + O(x^i).
+\end{equation}
+It is now straightforward to analyze the loss of $p$-adic
+precision. The only divisions by $2$ occur in the terms $\Dplus t/2$
+and $\Dminus t/2$; precisely, $t_i$ only depends on the coefficient of
+$x^i$ in $\Dplus t\Dminus t/4$. This coefficient is
+\begin{equation}
+  \sum_{\substack{j+k=i\\0<j,k<i}}\frac{(j+1)(k-1)}{4}t_jt_k.
+\end{equation}
+When $i$ is even, this becomes
+\begin{equation}
+  \frac{(i/2+1)(i/2-1)}{4}t_{i/2}^2 + \sum_{\substack{j+k=i\\0<j<k<i}}\frac{jk-1}{2}t_jt_k;
+\end{equation}
+by recalling that the even coefficients of $T$ have strictly positive
+valuation, some easy calculations show that no $2$-adic precision is
+lost in this sum. On the other hand, when $i$ is odd, the sum becomes
+\begin{equation}
+  \sum_{\substack{j+k=i\\0<j<k<i}}\frac{jk-1}{2}t_jt_k,
+\end{equation}
+with $j$ and $k$ having opposite parity, thus one bit of $2$-adic
+precision is lost in general.
+
+In conclusion, an initial precision of \emph{exactly} $n/2$ digits is
+needed in order to correctly compute $T\bmod 2$ at precision $n$,
+hence this quadratic iteration behaves similarly to (and even slightly
+better than) the quadratic iteration given previously for $p>2$.
+
+
+\paragraph{Controlling the $2$-adic precision in the Newton iteration}
+The Newton iteration in the case $p=2$ gets less lucky. There is no
+obvious way of linearizing Eq.~\eqref{eq:31} while keeping every
+intermediate result defined over $\F_q$. Equivalently, we can consider
+the function $R = S/x$, then Eq.~\eqref{eq:31} becomes
+\begin{equation}
+  \label{eq:40}
+  (x + 4\rev F(x))\left(\left(x\frac{R'}{2}\right)^2 + xR\frac{R'}{2}\right) =
+  R\rev\tilde{F}(xR) - \frac{R^2}{\rev F(x)}.
+\end{equation}
+A Newton iteration for such equation would require inverting $x +
+4\rev F(x)$, which obviously has coefficient of negative valuation.
+
+Experiments show that the $2$-adic precision required to compute $T$
+(or $R$) to precision $n$ by means of any Newton iteration, is about
+$8n$; it should not be too difficult to obtain a rigorous proof of a
+bound between $8n$ and $10n$ for a specific Newton iteration.
+
+We can try to concentrate the problematic power series in one
+place. Going back to the Newton iteration given by Eq.~\eqref{eq:26},
+we want to compute
+\begin{equation}
+  \label{eq:41}
+  t'\sqrt{\rev F(x) + x/4}\sqrt{x}
+  \int \frac{\frac{t}{x}(\rev\tilde{F}(t) + t/4) - {t'}^2(\rev F(x) + x/4)}{2{t'}^2\sqrt{\rev F(x) + x/4}^3}
+  \frac{1}{\sqrt{x}}.
+\end{equation}
+Substituting Eq.~\eqref{eq:32} inside the integral, we have
+\begin{equation}
+  \label{eq:42}
+  t'\sqrt{\rev F(x) + x/4}\sqrt{x}
+  \int \frac{\frac{t}{x}\rev\tilde{F}(t) - \frac{1}{x}\frac{\Dplus t}{2}\frac{\Dminus t}{2} - {t'}^2\rev F(x)}{2{t'}^2\sqrt{\rev F(x) + x/4}^3}
+  \frac{1}{\sqrt{x}},
+\end{equation}
+thus we reduce to compute an integral
+\begin{equation}
+  \label{eq:43}
+  \sqrt{\rev F(x) + x/4}\sqrt{x}  \int \frac{k(x)}{2\sqrt{\rev F(x) + x/4}^3\sqrt{x}}
+\end{equation}
+with $k(x)$ a power series with coefficients of positive valuation.
+
+
+
+\paragraph{Notes}
+\begin{itemize}
+\item Eq.~\eqref{eq:43} almost resembles an elliptic integral. May
+  this help find a solution without loosing too much precision?
+\item It appears that the problems in characteristic $2$ are due more
+  to the fact that we take square roots of power series than to the
+  divisions by $2$. These square roots appear because of the
+  coefficient $1/2$ appearing in Eq.~\eqref{eq:23}, which itself comes
+  from linearizing a quadratic equation. Using cubic models for the
+  elliptic curves, such as the Hessian model, may make these square
+  roots disappear (hopefully substituting them with a harmless cubic
+  root). Working on this.
+\item Is there an alternative way of doing a Newton iteration for
+  Eq.~\eqref{eq:32} or Eq.~\eqref{eq:40} which would keep the
+  structure as for the quadratic iteration?
+\item It is possible to reduce Eq.~\eqref{eq:37} modulo
+  $2$. Experimentally, it appears that $T_e = T_o' - 1 \bmod 8$, while
+  this equation is not satisfied for higher powers of $2$. I haven't
+  looked for a proof of this fact.
+
+  By injecting this equation in Eq.~\eqref{eq:37}, we obtain the
+  following relation:
+  \begin{equation}
+    \label{eq:44}
+    (1 + a_6x^4){T_o'}^2 = \tilde{a}_6T_o^4 + 1 + \frac{\Dplus T_o}{2}\frac{\Dplus T_o}{2} \mod 2
+  \end{equation}
+  and
+  \begin{equation}
+    \label{eq:45}
+    t_{i+1}^2 + a_6t_{i-1}^2 + \tilde{a}_6t_{i/2}^4 + \sum_{k+j+1=i}k(j+1)t_{2j+1}t_{2k+1} = 0 \mod 2.
+  \end{equation}
+  Obviously this last equation gives an interesting relation only for
+  $i$ even.  Reducing modulo $4$ doesn't give any more information
+  (and, obviously, reducing modulo $8$ gives one bit more).
+
+  We have the relations
+  \begin{equation}
+    \label{eq:46}
+    \frac{\Dplus T_o}{2} = \sum_{i\ge0}t_{4i+1}x^{4i+1},\qquad
+    \frac{\Dminus T_o}{2} = \sum_{i\ge0}t_{4i+3}x^{4i+3},
+  \end{equation}
+  which resemble a lot the equations appearing in \cite{lercier96}. I
+  suspect that Eq.~\eqref{eq:37} reduces modulo $2$ to the equations
+  by Lercier and that his algorithm or a similar variant can be
+  deduced from Eq.~\eqref{eq:45} plus some other relations. There is
+  little hope, however, of having a better complexity than
+  \cite{lercier96}, but this approach may make Lercier's algorithm
+  easier to understand.
+\end{itemize}
 
 
 
