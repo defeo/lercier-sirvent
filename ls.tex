@@ -474,14 +474,14 @@ better than) the quadratic iteration given previously for $p>2$.
 The Newton iteration in the case $p=2$ gets less lucky. There is no
 obvious way of linearizing Eq.~\eqref{eq:31} while keeping every
 intermediate result defined over $\F_q$. Equivalently, we can consider
-the function $R = S/x$, then Eq.~\eqref{eq:31} becomes
+the function $R = T/x$, then Eq.~\eqref{eq:31} becomes
 \begin{equation}
   \label{eq:40}
   (x + 4\rev F(x))\left(\left(x\frac{R'}{2}\right)^2 + xR\frac{R'}{2}\right) =
   R\rev\tilde{F}(xR) - \frac{R^2}{\rev F(x)}.
 \end{equation}
 A Newton iteration for such equation would require inverting $x +
-4\rev F(x)$, which obviously has coefficient of negative valuation.
+4\rev F(x)$, which obviously has coefficients of negative valuation.
 
 Experiments show that the $2$-adic precision required to compute $T$
 (or $R$) to precision $n$ by means of any Newton iteration, is about
