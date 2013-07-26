@@ -1,0 +1,134 @@
+\documentclass{article}
+
+\usepackage[francais]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{mysymbols}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{algorithmic}
+
+\DeclareMathOperator{\rev}{rev}
+\DeclareMathOperator{\Dplus}{\Delta^{{}^{\kern-0.5ex +}}}
+\DeclareMathOperator{\Dminus}{\Delta^{{}^{\kern-0.5ex -}}}
+
+\begin{document}
+
+Soient
+
+\begin{equation}
+  \label{eq:9}
+  \begin{gathered}
+    E \;:\; y^2 + xy = F(x),\\
+    \tilde{E} \;:\; y^2 + xy = \tilde{F}(x).
+  \end{gathered}
+\end{equation}
+deux courbes elliptiques sur une extension non ramifiée de $\Q_2$,
+avec $F$ et $\tilde{F}$ deux polynômes moniques de degré $3$, et
+supposons qu'il existe une isogénie séparable normalisée de degré
+$\ell$ à coefficients entiers\footnote{il existe un algorithme pour
+  produire une telle paire de courbes, mais pour faire simple j'en
+  parlerai pas ici}. On sait alors que l'isogénie est représentée par
+une fraction rationnelle $g/h$ avec $\deg h=\ell-1$ et $\deg g =\ell$.
+
+En complétant le carré et en utilisant les propriétés de la fonction
+$\wp$ de Weierstrass, on voit que la fraction $g/h$ satisfait une
+équation différentielle non-linéaire
+\begin{equation}
+  \label{eq:3}
+  \left(F(x)+\frac{x^2}{4}\right){\left(\frac{g}{h}\right)'}^2 =
+  \left(\tilde{F}+\frac{x^2}{4}\right)\left(\frac{g}{h}\right)
+\end{equation}
+et qu'elle a un pôle simple à l'infini.
+
+Lercier et Sirvent, d'après Bostan et al., trouvent la solution à
+l'équation ci-dessus en posant
+\begin{equation}
+  \label{eq:4}
+  S(x) = \sqrt{\frac{h(1/\sqrt{x})}{g(1/\sqrt{x})}}, \qquad \frac{1}{\sqrt{S(1/\sqrt{x})}} = \frac{g(x)}{h(x)},
+\end{equation}
+et en trouvant une solution série $S$ de l'équation différentielle
+avec précision $O(x^{4\ell-1})$.
+\begin{equation}
+  \label{eq:5}
+  \begin{gathered}
+    G(x){S'}^2 = H(S), \quad S(0) = 0,\quad\text{avec}\\
+    G(x) = x^6F(1/x^2) + \frac{x^2}{4}, \quad H(x) =
+    x^6\tilde{F}(1/x^2) + \frac{x^2}{4}.
+  \end{gathered}
+\end{equation}
+
+J'ai transcrit l'équation pour $S$ pour des raisons historiques, et
+parce que l'équation est très simple, mais personnellement je préfère
+travailler avec une autre série. Je note $\rev F$ le polynôme
+réciproque de $F$. Posons
+\begin{equation}
+  \label{eq:12}
+  T(x) \eqdef \frac{h(1/x)}{g(1/x)},
+\end{equation}
+alors $T$ vérifie l'équation différentielle
+\begin{equation}
+  \label{eq:31}
+  \left(\rev F(x) + \frac{x}{4}\right){T'}^2 = \frac{T}{x}\left(\rev\tilde{F}(T) + \frac{T}{4}\right),
+  \quad T(0)=0.
+\end{equation}
+En plus, nous savons que $T \bmod 2$ est une série impaire, c'est à
+dire $v_p(t_i)\ge 1$ pour tout $i$ pair. Seulement $2\ell$
+coefficients de $T$ sont nécessaires à déterminer $g/h$ et c'est l'une
+des raisons pour lesquelles je préfère $T$ à $S$.
+
+En imitant une astuce de Lercier et Sirvent, on peut donner une
+itération de Newton très astucieuse pour l'équation ci-dessus, ne
+faisant intervenir qu'une intégrale. J'évite les détails et je donne
+directement l'itération.
+\begin{equation}
+  \label{eq:41}
+  T_{i+1} = T_i + T_i'\sqrt{\rev F(x) + x/4}\sqrt{x}
+  \int \frac{\frac{T_i}{x}(\rev\tilde{F}(T_i) + T_i/4) - {T_i'}^2(\rev F(x) + x/4)}{2{T_i'}^2\sqrt{\rev F(x) + x/4}^3}
+  \frac{1}{\sqrt{x}}.
+\end{equation}
+Les facteurs $\sqrt{x}$ peuvent être traités symboliquement et ne
+posent pas de problème. Les racines carrées, par contre, font
+intervenir des coefficients de valuation $2$-adique négative. Ces
+coefficients finissent par se compenser, et je n'exclue pas qu'en
+liftant arbitrairement les coefficients on arrive à avoir une perte de
+précision seulement logarithmique, mais pour l'instant je n'ai pas
+essayé. Au contraire, dans le cas $p>2$ on arrive à montrer aisément
+une perte de précision en $O(\log^2\ell)$, sans besoin de tenir compte
+des compensations.
+
+On peut réécrire l'équation~\eqref{eq:31} comme
+\begin{equation}
+  \label{eq:32}
+  \begin{gathered}
+    \rev F(x){T'}^2 = \frac{T}{x}\rev\tilde{F}(T) - \frac{1}{x}\frac{\Dplus T}{2}\frac{\Dminus T}{2},
+    \quad\text{où}\\
+    \Dplus T = xT' + T = \sum_{i\ge0}(i+1)t_ix^i,\\
+    \Dminus T = xT' - T = \sum_{i\ge0}(i-1)t_ix^i,
+  \end{gathered}
+\end{equation}
+et, à cause des propriétés de $T$, on voit que $\Delta^+T/2$ et
+$\Delta^-T/2$ ont des coefficients entiers. De là, en appliquant la
+méthode des coefficients indéterminés, on obtient l'itération
+\begin{equation}
+  \label{eq:38}
+  (2i-1)t_ix^{i-1} = 
+  \frac{T}{x}\rev\Tilde{F}(T) - \frac{1}{x}\frac{\Dplus T}{2}\frac{\Dminus T}{2}
+  - \rev F(x)T'^2 + O(x^i).
+\end{equation}
+Avec un suivi de précision naïf, on peut montrer que la perte de
+précision au coefficient d'ordre $2\ell+1$ est égale à $\ell$. Je
+viens de faire des expériences en liftant arbitrairement les
+coefficients, et il semblerait qu'effectivement la perte réelle est
+seulement de $\lfloor\log_2\ell\rfloor +1$.
+
+\end{document}
+
+
+% Local Variables:
+% mode:TeX-PDF
+% mode:reftex
+% mode:flyspell
+% ispell-local-dictionary:"francais"
+% End:
+
