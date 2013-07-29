@@ -7,3 +7,4 @@ Research work on Lercier/Sirvent algorithm.
 - `ls.tex` research notes
 - `pierre.tex` summary of the notes above, in French, as sent to P. Lairez
 - `isogeny.patch` a patch to sage, implementing some experiments. Apply with `hg import`.
+- `cm.py` a forgotten script
