@@ -7,8 +7,8 @@ Grouped algorithms for isogenies of elliptic curves in characteristic 0 or large
 Moved Stark's algorithm and some helper functions away from ell_curve_isogeny.py, implemented BMSS algorithm. BMSS is now the default algorithm to compute the kernel of a normalized isogeny. Some cleanup in the docs.
 
 diff --git a/doc/en/reference/plane_curves.rst b/doc/en/reference/plane_curves.rst
---- a/doc/en/reference/plane_curves.rst
-+++ b/doc/en/reference/plane_curves.rst
+--- a/doc/en/reference/plane_curves/index.rst
++++ b/doc/en/reference/plane_curves/index.rst
 @@ -32,6 +32,7 @@
     sage/schemes/elliptic_curves/kodaira_symbol
     sage/schemes/elliptic_curves/weierstrass_morphism
