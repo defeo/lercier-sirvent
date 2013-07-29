@@ -1,0 +1,1441 @@
+# HG changeset patch
+# User Luca De Feo <luca.defeo@polytechnique.edu>
+# Date 1304002851 -7200
+# Node ID ceecfe35f3298ee7fdb8113883b5bbafa955584f
+# Parent  698ec14c513f99fa5a3a7aeca982cc14fd249a89
+Grouped algorithms for isogenies of elliptic curves in characteristic 0 or large.
+Moved Stark's algorithm and some helper functions away from ell_curve_isogeny.py, implemented BMSS algorithm. BMSS is now the default algorithm to compute the kernel of a normalized isogeny. Some cleanup in the docs.
+
+diff --git a/doc/en/reference/plane_curves.rst b/doc/en/reference/plane_curves.rst
+--- a/doc/en/reference/plane_curves.rst
++++ b/doc/en/reference/plane_curves.rst
+@@ -32,6 +32,7 @@
+    sage/schemes/elliptic_curves/kodaira_symbol
+    sage/schemes/elliptic_curves/weierstrass_morphism
+    sage/schemes/elliptic_curves/ell_curve_isogeny
++   sage/schemes/elliptic_curves/ell_isogeny_char_zero
+    sage/schemes/elliptic_curves/ell_wp
+    sage/schemes/elliptic_curves/period_lattice
+    sage/schemes/elliptic_curves/formal_group
+diff --git a/sage/schemes/elliptic_curves/ell_curve_isogeny.py b/sage/schemes/elliptic_curves/ell_curve_isogeny.py
+--- a/sage/schemes/elliptic_curves/ell_curve_isogeny.py
++++ b/sage/schemes/elliptic_curves/ell_curve_isogeny.py
+@@ -40,8 +40,7 @@
+ 
+ .. Warning::
+ 
+-   Only cyclic isogenies are implemented (except for [2]). Some
+-   algorithms may need the isogeny to be normalized.
++   Some algorithms may need the isogeny to be normalized.
+ 
+ AUTHORS:
+ 
+@@ -72,7 +71,6 @@
+ from sage.rings.polynomial.polynomial_ring_constructor import PolynomialRing
+ from sage.rings.polynomial.polynomial_ring import polygen
+ from sage.rings.all import Integer, ZZ
+-from sage.rings.laurent_series_ring import LaurentSeriesRing
+ from sage.rings.polynomial.all import is_Polynomial
+ from sage.schemes.elliptic_curves.all import EllipticCurve
+ from sage.schemes.elliptic_curves.all import is_EllipticCurve
+@@ -87,6 +85,8 @@
+ 
+ from sage.misc.cachefunc import cached_function
+ 
++from sage.schemes.elliptic_curves import ell_isogeny_char_zero
++
+ #
+ # Private function for parsing input to determine the type of
+ # algorithm
+@@ -464,7 +464,7 @@
+     r"""
+     Class Implementing Isogenies of Elliptic Curves
+ 
+-    This class implements cyclic, separable, normalized isogenies of
++    This class implements separable, normalized isogenies of
+     elliptic curves.
+ 
+     Several different algorithms for computing isogenies are
+@@ -491,11 +491,11 @@
+                       set to None.
+                       
+     - ``codomain``  - an elliptic curve (default:``None``).  If ``kernel``
+-                      is ``None``, then this must be the codomain of a cyclic,
++                      is ``None``, then this must be the codomain of a
+                       separable, normalized isogeny, furthermore, ``degree``
+                       must be the degree of the isogeny from ``E`` to
+                       ``codomain``. If ``kernel`` is not ``None``, then this
+-                      must be isomorphic to the codomain of the cyclic normalized
++                      must be isomorphic to the codomain of the normalized
+                       separable isogeny defined by ``kernel``, in this case, the
+                       isogeny is post composed with an isomorphism so that this
+                       parameter is the codomain.
+@@ -705,21 +705,20 @@
+         sage: phi_s.rational_maps() == phi.rational_maps()
+         True
+ 
+-    However only cyclic normalized isogenies can be constructed this
+-    way. So it won't find the isogeny [3]::
++    However only normalized isogenies can be constructed this
++    way. So it won't find the multiplication-by-3 endomorphism::
+  
+         sage: E.isogeny(None, codomain=E,degree=9)
+         Traceback (most recent call last):
+         ...
+-        ValueError: The two curves are not linked by a cyclic normalized isogeny of degree 9
+-
+-    Also the presumed isogeny between the domain and codomain must be
+-    normalized::
++        ValueError: The two curves are not linked by a rational normalized isogeny of degree 9
++
++    nor the dual isogeny::
+ 
+         sage: E2.isogeny(None,codomain=E,degree=5)
+         Traceback (most recent call last):
+         ...
+-        ValueError: The two curves are not linked by a cyclic normalized isogeny of degree 5
++        ValueError: The two curves are not linked by a rational normalized isogeny of degree 5
+         sage: phi.dual()
+         Isogeny of degree 5 from Elliptic Curve defined by y^2 + y = x^3 - x^2 - 7820*x - 263580 over Rational Field to Elliptic Curve defined by y^2 + y = x^3 - x^2 - 10*x - 20 over Rational Field
+         sage: phi.dual().is_normalized()
+@@ -3481,234 +3480,15 @@
+ 
+         """
+         raise NotImplementedError, "Numerical approximations do not make sense for Elliptic Curve Isogenies"
++
+  
+ # no longer needed (trac 7096)
+ # def starks_find_r_and_t(T, Z):
+ 
+-def compute_isogeny_starks(E1, E2, ell):
+-    r"""
+-    Computes the degree ``ell`` isogeny between ``E1`` and ``E2`` via
+-    Stark's algorithm.  There must be a degree ``ell``, separable,
+-    normalized cyclic isogeny from ``E1`` to ``E2``.
+-
+-    INPUT:
+-    
+-    - ``E1``  - an elliptic curve in short Weierstrass form.
+-    - ``E2``  - an elliptic curve in short Weierstrass form.
+-    - ``ell`` - the degree of the isogeny from E1 to E2.
+-
+-    OUTPUT:
+-
+-    polynomial -- over the field of definition of ``E1``, ``E2``, that is the
+-                  kernel polynomial of the isogeny from ``E1`` to ``E2``.
+-
+-    ALGORITHM:
+-    
+-    This function uses Starks Algorithm as presented in section 6.2 of
+-    [BMSS].
+-
+-    .. note::
+-    
+-       As published there, the algorithm is incorrect, and a correct
+-       version (with slightly different notation) can be found in
+-       [M09].  The algorithm originates in [S72]
+-
+-    REFERENCES:
+-
+-    - [BMSS] Boston, Morain, Salvy, Schost, "Fast Algorithms for Isogenies."
+-    - [M09] Moody, "The Diffie-Hellman Problem and Generalization of Verheul's Theorem"
+-    - [S72] Stark, "Class-numbers of complex quadratic fields."
+-
+-    EXAMPLES::
+-
+-        sage: from sage.schemes.elliptic_curves.ell_curve_isogeny import compute_isogeny_starks, compute_sequence_of_maps
+-
+-        sage: E = EllipticCurve(GF(97), [1,0,1,1,0])
+-        sage: R.<x> = GF(97)[]; f = x^5 + 27*x^4 + 61*x^3 + 58*x^2 + 28*x + 21
+-        sage: phi = EllipticCurveIsogeny(E, f)
+-        sage: E2 = phi.codomain()
+-        sage: (isom1, isom2, E1pr, E2pr, ker_poly) = compute_sequence_of_maps(E, E2, 11)
+-        sage: compute_isogeny_starks(E1pr, E2pr, 11)
+-        x^10 + 37*x^9 + 53*x^8 + 66*x^7 + 66*x^6 + 17*x^5 + 57*x^4 + 6*x^3 + 89*x^2 + 53*x + 8
+-
+-        sage: E = EllipticCurve(GF(37), [0,0,0,1,8])
+-        sage: R.<x> = GF(37)[]
+-        sage: f = (x + 14) * (x + 30)
+-        sage: phi = EllipticCurveIsogeny(E, f)
+-        sage: E2 = phi.codomain()
+-        sage: compute_isogeny_starks(E, E2, 5)
+-        x^4 + 14*x^3 + x^2 + 34*x + 21
+-        sage: f**2
+-        x^4 + 14*x^3 + x^2 + 34*x + 21
+-
+-        sage: E = EllipticCurve(QQ, [0,0,0,1,0])
+-        sage: R.<x> = QQ[]
+-        sage: f = x
+-        sage: phi = EllipticCurveIsogeny(E, f)
+-        sage: E2 = phi.codomain()
+-        sage: compute_isogeny_starks(E, E2, 2)
+-        x
+-
+-    """
+-    
+-    K = E1.base_field()
+-    R = PolynomialRing(K, 'x')
+-    x = R.gen()
+-   
+-    wp1 = E1.weierstrass_p(prec=4*ell+4)  #BMSS claim 2*ell is enough, but it is not M09
+-    wp2 = E2.weierstrass_p(prec=4*ell+4)
+-    
+-    # viewed them as power series in Z = z^2
+-    S = LaurentSeriesRing(K, 'Z')
+-    Z = S.gen() 
+-    pe1 = 1/Z
+-    pe2 = 1/Z
+-    for i in xrange(2*ell+1):
+-        pe1 += wp1[2*i] * Z**i
+-        pe2 += wp2[2*i] * Z**i
+-    pe1 = pe1.add_bigoh(2*ell+2)
+-    pe2 = pe2.add_bigoh(2*ell+2)
+-    
+-    #print 'wps = ',pe1
+-    #print 'wps2 = ',pe2
+-    
+-    n = 1
+-    q = [R(1), R(0)]
+-    #p = [R(0), R(1)]
+-    T = pe2
+-
+-    while ( q[n].degree() < (ell-1) ):
+-        #print 'n=', n
+-
+-        n += 1
+-        a_n = 0
+-        r = -T.valuation()
+-        while ( 0 <= r and T != 0):
+-            t_r = T[-r]
+-            #print '    r=',r
+-            #print '    t_r=',t_r
+-            #print '    T=',T
+-            a_n = a_n + t_r * x**r
+-            T = T - t_r*pe1**r
+-            r = -T.valuation()
+-           
+-
+-        q_n = a_n*q[n-1] + q[n-2]
+-        q.append(q_n)
+-        #p_n = a_n*p[n-1] + q[n-2]
+-        #p.append(p_n)
+-
+-        if (n == ell+1 or T==0):
+-            if T.valuation()<2:
+-                raise ValueError, "The two curves are not linked by a cyclic normalized isogeny of degree %s"%ell
+-            #print 'breaks here'
+-            break
+-
+-        T = 1/T
+-        #print '  a_n=', a_n
+-        #print '  q_n=', q_n
+-        #print '  p_n=', p_n
+-        #print '  T = ', T
+-
+-    qn = q[n]
+-    #pn= p[n]
+-    #print 'final  T = ', T
+-    #print '  f =', pn/qn
+-
+-    qn = (1/qn.leading_coefficient())*qn
+-    #pn = (1/qn.leading_coefficient())*pn
+-
+-    return qn
+-
+-def split_kernel_polynomial(E1, ker_poly, ell):
+-    r"""
+-    Internal helper function for ``compute_isogeny_kernel_polynomial``.
+-
+-    Given a full kernel polynomial (where two torsion `x`-coordinates
+-    are roots of multiplicity 1, and all other roots have multiplicity
+-    2.)  of degree `\ell-1`, returns the maximum separable divisor.
+-    (i.e. the kernel polynomial with roots of multiplicity at most 1).
+-    
+-    EXAMPLES:
+-
+-    The following example implicitly exercises this function::
+-
+-        sage: E = EllipticCurve(GF(37), [0,0,0,1,8])
+-        sage: R.<x> = GF(37)[]
+-        sage: f = (x + 10) * (x + 12) * (x + 16)
+-        sage: phi = EllipticCurveIsogeny(E, f)
+-        sage: E2 = phi.codomain()
+-        sage: from sage.schemes.elliptic_curves.ell_curve_isogeny import compute_isogeny_starks
+-        sage: from sage.schemes.elliptic_curves.ell_curve_isogeny import split_kernel_polynomial
+-        sage: ker_poly = compute_isogeny_starks(E, E2, 7); ker_poly
+-        x^6 + 2*x^5 + 20*x^4 + 11*x^3 + 36*x^2 + 35*x + 16
+-        sage: split_kernel_polynomial(E, ker_poly, 7)
+-        x^3 + x^2 + 28*x + 33
+-
+-    """
+-
+-    poly_ring = ker_poly.parent()
+-
+-    z = poly_ring.gen(0)
+-
+-    ker_poly_2tor = two_torsion_part(E1, poly_ring, ker_poly, ell)
+-    ker_poly_quo = poly_ring(ker_poly/ker_poly_2tor)
+-    ker_poly_quo_sqrt = ker_poly_quo.gcd(ker_poly_quo.derivative(z))
+-    ker_poly = ker_poly_2tor*ker_poly_quo_sqrt
+-    ker_poly = (1/ker_poly.leading_coefficient())*ker_poly
+-
+-    return ker_poly
+-
+-
+-def compute_isogeny_kernel_polynomial(E1, E2, ell, algorithm="starks"):
+-    r"""
+-    Computes the kernel polynomial of the degree ``ell`` isogeny
+-    between ``E1`` and ``E2``.  There must be a degree ``ell``,
+-    cyclic, separable, normalized isogeny from ``E1`` to ``E2``.
+-
+-    INPUT:
+-
+-    - ``E1``        - an elliptic curve in short Weierstrass form.
+-
+-    - ``E2``        - an elliptic curve in short Weierstrass form.
+-
+-    - ``ell``       - the degree of the isogeny from ``E1`` to ``E2``.
+-
+-    - ``algorithm`` - currently only ``starks`` (default) is implemented.
+-
+-    OUTPUT:
+-    
+-    polynomial -- over the field of definition of ``E1``, ``E2``, that is the
+-                  kernel polynomial of the isogeny from ``E1`` to ``E2``.
+-
+-    EXAMPLES::
+-
+-        sage: from sage.schemes.elliptic_curves.ell_curve_isogeny import compute_isogeny_kernel_polynomial
+-
+-        sage: E = EllipticCurve(GF(37), [0,0,0,1,8])
+-        sage: R.<x> = GF(37)[]
+-        sage: f = (x + 14) * (x + 30)
+-        sage: phi = EllipticCurveIsogeny(E, f)
+-        sage: E2 = phi.codomain()
+-        sage: compute_isogeny_kernel_polynomial(E, E2, 5)
+-        x^2 + 7*x + 13
+-        sage: f
+-        x^2 + 7*x + 13
+-
+-        sage: R.<x> = QQ[]
+-        sage: K.<i> = NumberField(x^2 + 1)
+-        sage: E = EllipticCurve(K, [0,0,0,1,0])
+-        sage: E2 = EllipticCurve(K, [0,0,0,16,0])
+-        sage: compute_isogeny_kernel_polynomial(E, E2, 4)
+-        x^3 + x
+-
+-    """
+-
+-    ker_poly = compute_isogeny_starks(E1, E2, ell)
+-    ker_poly = split_kernel_polynomial(E1, ker_poly, ell)
+-
+-    return ker_poly
+-
++# these functions have been moved to ell_isogeny_char_zero.py
++from sage.misc.superseded import deprecated_function_alias
++compute_isogeny_starks = deprecated_function_alias(11095, ell_isogeny_char_zero.isogeny_Stark)
++compute_isogeny_kernel_polynomial = deprecated_function_alias(11095, ell_isogeny_char_zero.isogeny_kernel)
+ 
+ def compute_intermediate_curves(E1, E2):
+     r"""
+@@ -3730,8 +3510,8 @@
+ 
+     OUTPUT:
+     
+-    tuple -- (``pre_isomorphism``, ``post_isomorphism``, ``intermediate_domain``,
+-              ``intermediate_codomain``):
++    tuple -- (``intermediate_domain``, ``intermediate_codomain``,
++              ``pre_isomorphism``, ``post_isomorphism``):
+     
+     - ``intermediate_domain``: a short Weierstrass model isomorphic to ``E1``
+     - ``intermediate_codomain``: a short Weierstrass model isomorphic to ``E2``
+@@ -3809,13 +3589,28 @@
+     return (intermediate_domain, intermediate_codomain, pre_isom, post_isom)
+ 
+ 
+-def compute_sequence_of_maps(E1, E2, ell):
++def compute_sequence_of_maps(E1, E2, ell, algorithm=None):
+     r"""
+     Given domain ``E1`` and codomain ``E2`` such that there is a
+     degree ``ell`` separable normalized isogeny from ``E1`` to ``E2``,
+     returns pre/post isomorphism, as well as intermediate domain and
+     codomain, and kernel polynomial.
+ 
++    INPUT:
++    
++    - ``E1`` - an elliptic curve
++    - ``E2`` - an elliptic curve
++    - ``ell`` - the degree of the isogeny from ``E1`` to ``E2``.
++    - ``algorithm`` - the algorithm to use. Current available choices are ``BMSS``
++      and ``Stark``
++      (see :py:mod:`sage.schemes.elliptic_curves.ell_isogeny_char_zero`).
++      If ``None`` is given, the best algorithm is figured out automatically. 
++
++    OUTPUT:
++    
++    tuple -- (``pre_isomorphism``, ``post_isomorphism``, ``intermediate_domain``,
++              ``intermediate_codomain``, ``kernel_polynomial``):
++
+     EXAMPLES::
+ 
+         sage: from sage.schemes.elliptic_curves.ell_curve_isogeny import compute_sequence_of_maps
+@@ -3868,13 +3663,20 @@
+          Elliptic Curve defined by y^2 = x^3 + 52*x + 31 over Finite Field of size 97,
+          Elliptic Curve defined by y^2 = x^3 + 41*x + 66 over Finite Field of size 97,
+          x^5 + 67*x^4 + 13*x^3 + 35*x^2 + 77*x + 69)
+-
++        
+     """
+ 
+     (E1pr, E2pr, pre_isom, post_isom) = compute_intermediate_curves(E1, E2)
+     
+-    ker_poly = compute_isogeny_kernel_polynomial(E1pr, E2pr, ell)
+-
++    if algorithm is None or algorithm in ell_isogeny_char_zero.algorithm_names:
++        try:
++            ker_poly = ell_isogeny_char_zero.isogeny_kernel(E1pr, E2pr, ell, algorithm)
++        except ZeroDivisionError as e:
++            if not algorithm is None: raise e
++            else: raise NotImplementedError, "No algorithm working on fields of small characteristic is currently implemented."
++    else:
++        raise ValueError, "Unknown algorithm '%s'" %algorithm
++    
+     return (pre_isom, post_isom, E1pr, E2pr, ker_poly)
+ 
+ 
+diff --git a/sage/schemes/elliptic_curves/ell_isogeny_char_zero.py b/sage/schemes/elliptic_curves/ell_isogeny_char_zero.py
+new file mode 100644
+--- /dev/null
++++ b/sage/schemes/elliptic_curves/ell_isogeny_char_zero.py
+@@ -0,0 +1,636 @@
++r"""
++Normalized isogenies in characteristic 0 or large
++
++This modules contains algorithms to compute normalized isogenies between
++elliptic curves that only work when the characteristic of the base field is `0` 
++or large enough. Recall that an isogeny `\phi:E_1\to E_2` is said to be
++normalized if
++
++.. math::
++    
++    \phi^\ast \omega_2 = \omega_1
++    
++where `\omega_1` and `\omega_2` are the invariant differentials of `E_1` and
++`E_2` respectively. See [Sil86]_, III.5.
++
++The entry point to this module is the function :py:func:`isogeny_kernel`, which 
++takes care of checking the inputs, selecting the algorithm, and verifying the
++outputs. Currently, Stark's and Bostan-Morain-Salvy-Schost algorithms are
++implemented, by :py:func:`isogeny_Stark` and :py:func:`isogeny_BMSS`
++respectively; directly calling these should be reserved to the expert
++user. A review of these algortihms can be found in [BMSS]_.
++
++AUTHORS:
++
++- Luca De Feo: 2011-05: Initial version: implemented BMSS, moved Stark's algorithm here.
++
++REFERENCES:
++
++.. [BMSS] Bostan, Morain, Salvy, Schost, "Fast Algorithms for Isogenies."
++.. [M09] Moody, "The Diffie-Hellman Problem and Generalization of Verheul's Theorem"
++.. [Sil86] Silverman, "The Arithmetic of Elliptic Curves"
++.. [S72] Stark, "Class-numbers of complex quadratic fields."
++
++"""
++
++#*****************************************************************************
++#       Copyright (C) 2011 Luca De Feo <luca.defeo@polytechnique.edu>
++#
++#  Distributed under the terms of the GNU General Public License (GPL)
++#                  http://www.gnu.org/licenses/
++#*****************************************************************************
++
++from sage.rings.arith import is_square
++from sage.rings.polynomial.polynomial_ring_constructor import PolynomialRing
++from sage.rings.power_series_ring import PowerSeriesRing
++from sage.rings.laurent_series_ring import LaurentSeriesRing
++from sage.matrix.berlekamp_massey import berlekamp_massey
++from sage.rings.infinity import Infinity
++
++# The names by which the algorithms of this module may be called
++bmss_names = ("BMSS", "bmss")
++stark_names = ("Stark", "stark", "Starks", "starks")
++algorithm_names = bmss_names + stark_names
++
++def isogeny_kernel(E1, E2, degree, algorithm="BMSS"):
++    r"""
++    Compute the kernel polynomial of the normalized rational isogeny between
++    ``E1`` and ``E2`` of degree ``degree`` .
++    
++    Assuming a rational normalized isogeny of degree ``degree`` exists between
++    ``E1`` and
++    ``E2``, this function returns the squarefree polynomial vanishing on the 
++    abscissae of its kernel. If no such isogeny exists, the outcome depends on
++    the algorithm:
++     
++        - If the BMSS algorithm is used, its output is tested for correctness: 
++          if the test succeeds an exception is returned, if it fails a random
++          polynomial is returned. The test has heuristic failure probability 
++          exponentially small in ``degree``, see :py:func:`isogeny_BMSS`
++          for details.
++           
++        - If Stark's algorithm is used, an exception is returned. (This is 
++          most probably not true. Luca De Feo, Jul 29, 2011)
++
++    Better checks are implemented by
++    :py:class:`sage.schemes.elliptic_curves.ell_curve_isogeny.EllipticCurveIsogeny`
++    and by
++    :py:meth:`sage.schemes.elliptic_curves.ell_field.EllipticCurve_field.isogeny`,
++    which are the preferred ways to create isogenies at the sage command line.
++
++    :param E1: an elliptic curve in short Weierstrass form.
++    :param E2: an elliptic curve in short Weierstrass form.
++    :param degree: the degree of the isogeny from ``E1`` to ``E2``.
++    :param algorithm: ``BMSS`` (default) or ``Stark``.
++
++    :returns: the squarefree polynomial vanishing on the abscissae of the kernel
++        of the isogeny.
++    :rtype: Polynomial
++
++    :raises ZeroDivisionError: when the characteristic is too small to compute
++        isogenies of degree ``degree``. See below.
++    :raises ValueError: when no isogeny is found.
++    :raises ValueError: when the two curves are not in short Weierstrass form.
++
++    .. WARNING::
++        
++        If the characteristic of the base field is `p>0`, the algorithms of this
++        module only work when a certain bound on ``degree`` is satisfied:
++        
++            - for BMSS, ``p > 4 degree - 1``,
++            - for Stark's, ``p > 4 degree + 6``.
++            
++        If the bound is not satisfied, a ``ZeroDivisionError`` is raised.
++    
++    EXAMPLES:
++    
++    We can compute isogenies over the rationals::
++
++        sage: from sage.schemes.elliptic_curves.ell_isogeny_char_zero import isogeny_kernel
++
++        sage: E = EllipticCurve(QQ, [0,0,0,1,0])
++        sage: R.<x> = QQ[]
++        sage: f = x
++        sage: phi = EllipticCurveIsogeny(E, f)
++        sage: E2 = phi.codomain(); E2
++        Elliptic Curve defined by y^2 = x^3 - 4*x over Rational Field
++        sage: isogeny_kernel(E, E2, 2)
++        x
++    
++    However beware that BMSS may return a wrong answer::
++    
++        sage: E2 = EllipticCurve([0,0,0,16,0])
++        sage: isogeny_kernel(E, E2, 2)
++        x
++        sage: E.isogeny(None, codomain=E2, degree=2)
++        Traceback (most recent call last):
++        ...
++        ValueError: Codomain parameter must be isomorphic to computed codomain isogeny
++
++    While Stark's algorithm is somewhat safer (but see the documentation of
++    :py:func:`isogeny_BMSS` for another way of avoiding wrong answers)::
++    
++        sage: isogeny_kernel(E, E2, 2, "Stark")
++        Traceback (most recent call last):
++        ...
++        ValueError: The two curves are not linked by a rational normalized isogeny of degree 2
++        
++    We can also compute isogenies over finite fields::
++
++        sage: E = EllipticCurve(GF(37), [0,0,0,1,8])
++        sage: R.<x> = GF(37)[]
++        sage: f = (x + 14) * (x + 30)
++        sage: phi = EllipticCurveIsogeny(E, f)
++        sage: E2 = phi.codomain()
++        sage: isogeny_kernel(E, E2, 5)
++        x^2 + 7*x + 13
++        sage: f
++        x^2 + 7*x + 13
++
++    and number fields, too::
++    
++        sage: R.<x> = QQ[]
++        sage: K.<i> = NumberField(x^2 + 1)
++        sage: E = EllipticCurve(K, [0,0,0,1,0])
++        sage: E2 = EllipticCurve(K, [0,0,0,16,0])
++        sage: isogeny_kernel(E, E2, 4, algorithm="stark")
++        x^3 + x
++
++    """
++
++    p = E1.base_ring().characteristic()
++
++    # BMSS algorithm
++    if algorithm in bmss_names or algorithm is None:
++        if p > 0 and p <= 4*degree-1:
++            raise ZeroDivisionError, "BMSS algorithm only works for characteristic 0 or greater than 4*degree - 1."
++        
++        # BMSS returns the denominator of the x-component of a normalized
++        # isogeny of degree at most degree,
++        # or a non-sense polynomial if no such isogeny exists.
++        ker_poly = isogeny_BMSS(E1, E2, degree)
++        # Here we check that the isogeny has EXACTLY the required degree.
++        if ker_poly.degree() != degree-1:
++            raise ValueError, "The two curves are not linked by a rational normalized isogeny of degree %s"%degree
++        # Here we check that it probably is an isogeny and not any random polynomial.
++        # See the discussion in the documentation.
++        even_part = ker_poly.gcd(E1.two_division_polynomial())
++        odd_part, _ = ker_poly.quo_rem(even_part)
++        check, sqodd_part = is_square(odd_part, root=True)
++        if not check:
++            raise ValueError, "The two curves are not linked by a rational normalized isogeny of degree %s"%degree
++        return even_part * sqodd_part
++
++    # Stark's algorithm
++    elif algorithm in stark_names:
++        if p > 0 and p <= 4*degree+6:
++            raise ZeroDivisionError, "Stark's algorithm only works for characteristic 0 or greater than 4*degree + 6."
++
++        # Stark's algorithm returns the denominator of the x-component of the
++        # isogeny, we get its squarefree part
++        ker_poly = isogeny_Stark(E1, E2, degree)
++        even_part = ker_poly.gcd(E1.two_division_polynomial())
++        odd_part, _ = ker_poly.quo_rem(even_part)
++        check, sqodd_part = is_square(odd_part, root=True)
++        if not check:
++            raise RuntimeError, "Stark's algorithm returned an unexpected result. Please report this bug."
++        return even_part * sqodd_part
++
++    else:
++        raise ValueError, "Unknown algorithm '%s'." %algorithm
++
++
++def isogeny_Stark(E1, E2, degree):
++    r"""
++    Compute the kernel of the degree ``degree`` isogeny between ``E1`` and ``E2`` via
++    Stark's algorithm.  There must be a degree ``degree``, rational, separable,
++    normalized isogeny from ``E1`` to ``E2``.
++
++    :param E1: an elliptic curve in short Weierstrass form.
++    :param E2: an elliptic curve in short Weierstrass form.
++    :param degree: the degree of the isogeny from ``E1`` to ``E2``.
++
++    :returns: the polynomial vanishing on the abscissae of the kernel
++        of the isogeny. Notice that the abscissa of points of order greater than
++        2 is contributed twice in the polynomial (once from the point and once 
++        from its opposite).
++    :rtype: Polynomial
++
++    :raises ZeroDivisionError: when the characteristic is smaller or equal to
++        ``4*degree + 6`` and not 0.
++    :raises ValueError: when no isogeny is found.
++    :raises ValueError: when the two curves are not in short Weierstrass form.
++        
++    ALGORITHM:
++    
++    This function uses Stark's Algorithm as presented in section 6.2 of
++    [BMSS]_.
++
++    .. note::
++    
++       As published there, the algorithm is incorrect, and a correct
++       version (with slightly different notation) can be found in
++       [M09]_.  The algorithm originates in [S72]_
++
++    EXAMPLES::
++    
++        sage: from sage.schemes.elliptic_curves.ell_isogeny_char_zero import isogeny_Stark
++
++        sage: E1 = EllipticCurve(GF(97), [52, 31])
++        sage: R.<x> = GF(97)[]; f = x^5 + 67*x^4 + 13*x^3 + 35*x^2 + 77*x + 69
++        sage: phi = EllipticCurveIsogeny(E1, f)
++        sage: E2 = phi.codomain()
++        sage: isogeny_Stark(E1, E2, 11)
++        x^10 + 37*x^9 + 53*x^8 + 66*x^7 + 66*x^6 + 17*x^5 + 57*x^4 + 6*x^3 + 89*x^2 + 53*x + 8
++
++        sage: E = EllipticCurve(GF(37), [0,0,0,1,8])
++        sage: R.<x> = GF(37)[]
++        sage: f = (x + 14) * (x + 30)
++        sage: phi = EllipticCurveIsogeny(E, f)
++        sage: E2 = phi.codomain()
++        sage: isogeny_Stark(E, E2, 5)
++        x^4 + 14*x^3 + x^2 + 34*x + 21
++        sage: f**2
++        x^4 + 14*x^3 + x^2 + 34*x + 21
++
++    """
++    
++    K = E1.base_field()
++    R = PolynomialRing(K, 'x')
++    x = R.gen()
++   
++    try:
++        wp1 = E1.weierstrass_p(prec=4*degree+4)  #BMSS claim 2*degree is enough, but it is not M09
++        wp2 = E2.weierstrass_p(prec=4*degree+4)
++    except NotImplementedError:
++        raise ZeroDivisionError, "Stark's algorithm only works for characteristic 0 or greater than 4*degree + 6."
++    
++    # viewed them as power series in Z = z^2
++    S = LaurentSeriesRing(K, 'Z')
++    Z = S.gen() 
++    pe1 = 1/Z
++    pe2 = 1/Z
++    for i in xrange(2*degree+1):
++        pe1 += wp1[2*i] * Z**i
++        pe2 += wp2[2*i] * Z**i
++    pe1 = pe1.add_bigoh(2*degree+2)
++    pe2 = pe2.add_bigoh(2*degree+2)
++    
++    #print 'wps = ',pe1
++    #print 'wps2 = ',pe2
++    
++    n = 1
++    q = [R(1), R(0)]
++    #p = [R(0), R(1)]
++    T = pe2
++
++    while ( q[n].degree() < (degree-1) ):
++        #print 'n=', n
++
++        n += 1
++        a_n = 0
++        r = -T.valuation()
++        while ( 0 <= r and T != 0):
++            t_r = T[-r]
++            #print '    r=',r
++            #print '    t_r=',t_r
++            #print '    T=',T
++            a_n = a_n + t_r * x**r
++            T = T - t_r*pe1**r
++            r = -T.valuation()
++           
++
++        q_n = a_n*q[n-1] + q[n-2]
++        q.append(q_n)
++        #p_n = a_n*p[n-1] + q[n-2]
++        #p.append(p_n)
++
++        if (n == degree+1 or T==0):
++            if T.valuation()<2:
++                raise ValueError, "The two curves are not linked by a rational normalized isogeny of degree %s"%degree
++            #print 'breaks here'
++            break
++
++        T = 1/T
++        #print '  a_n=', a_n
++        #print '  q_n=', q_n
++        #print '  p_n=', p_n
++        #print '  T = ', T
++
++    qn = q[n]
++    #pn= p[n]
++    #print 'final  T = ', T
++    #print '  f =', pn/qn
++
++    qn = (1/qn.leading_coefficient())*qn
++    #pn = (1/qn.leading_coefficient())*pn
++
++    return qn
++
++
++def isogeny_BMSS(E1, E2, degree):
++    r"""
++    Compute the kernel of the normalized isogeny between ``E1`` and ``E2`` via
++    the BMSS algorithm.  There must be a rational, separable,
++    normalized isogeny of degree at most ``degree`` from ``E1`` to ``E2``.
++
++    :param E1: an elliptic curve in the Weierstrass form `y^2 = f(x)`.
++    :param E2: an elliptic curve in the Weierstrass form `y^2 = f(x)`.
++    :param degree: a bound on the degree of the isogeny from E1 to E2.
++
++    :returns: the polynomial vanishing on the abscissae of the kernel
++        of the isogeny, if the isogeny exists, or a random looking polynomial
++        otherwise. Notice that if the isogeny exists, the abscissa of points of
++        order greater than
++        2 is contributed twice in the polynomial (once from the point and once 
++        from its opposite).
++    :rtype: Polynomial
++
++    :raises ZeroDivisionError: when the characteristic is smaller or equal to
++        ``4*degree - 1`` and not 0.
++    :raises ValueError: when no isogeny is found.
++    :raises ValueError: when the two curves are not in the Weierstrass form
++        `y^2 = f(x)`.
++
++    .. WARNING::
++    
++        If no rational normalized isogeny of degree at most ``degree`` 
++        exists between ``E1`` and ``E2``, this function silently fails by 
++        returning a somewhat random polynomial of degree ``degree - 1``. 
++        A check on this result must be performed in order to tell it apart
++        from the successfull case.
++        
++        One easy test is to check that the result is the product of a square
++        polynomial and of a factor of the 2-division polynomial. Obviously the
++        probability that a random polynomial satisfies this condition depends
++        upon what one means by "random", not to mention that the result of this
++        algorithm is obviously not random. However it is fair to say that the
++        failure probability of this test decreases exponentially with
++        ``degree``.
++        
++        Other, more constraining, test are implemented by 
++        :py:class:`sage.schemes.elliptic_curves.ell_curve_isogeny.EllipticCurveIsogeny`,
++        and by
++        :py:meth:`sage.schemes.elliptic_curves.ell_field.EllipticCurve_field.isogeny`,
++        which are the preferred ways to create isogenies at the sage command
++        line.
++
++    .. note::
++
++        The BMSS algorithm differs from Stark's algorithm in that it doesn't
++        need the degree of the isogeny as input. However, for efficiency (and to
++        insure termination in characteristic `0`), this implementation takes a
++        bound on the degree of the isogeny as input.
++
++        The key property is that, given two elliptic
++        curves defined over a field of characteristic `p`, there is at most one
++        normalized isogeny of degree less than `(p+1)/4` (or of any degree in 
++        case `p=0`), and the BMSS algorithm will eventually find it. 
++        
++        To prove the uniqueness, suppose that `\phi_1` and `\phi_2` are both
++        normalized, then by [Sil86]_, III.5.2
++        
++        .. math::
++            
++            (\phi_1 - \phi_2)^\ast \omega_2 = 0
++        
++        so `\phi_1-\phi_2` is not separable ([Sil86]_, II.4.2(c)). This rules
++        out the case `p=0`.
++        
++        Now suppose that `p>0`. Denote by `d(\phi)` the degree of an isogeny
++        `\phi`, and suppose w.l.o.g. that `d(\phi_1)>d(\phi_2)`.
++        Because `\phi_1-\phi_2` is unseparable, `d(\phi_1-\phi_2)`
++        is at least `p` ([Sil86]_, II.2.12). The degree is a positive definite
++        quadratic form on `\mathrm{Hom}(E_1,E_2)` ([Sil86]_, III.6.3), so by
++        the triangle inequality ([Sil86]_, V.1.2) 
++        
++        .. math::
++        
++            p \le
++            d(\phi_1 - \phi_2) \le
++            \left(\sqrt{d(\phi_1)} + \sqrt{d(\phi_2)}\right)^2 \le
++            4d(\phi_1) <
++            p+1.
++         
++        Hence `p=4d(\phi_1)`, contraddicting the fact that `p` is prime. The
++        credit for this proof goes to Marco Streng.
++        
++        The proof that the algorithm will indeed find the isogeny is in [BMSS]_.
++        The only addendum is that the degree of the isogeny only plays
++        a role in determining the truncation order of a certain power series
++        (see below),
++        and that computing beyond this truncation order does not change the
++        result.
++        
++    ALGORITHM:
++    
++    This function uses an unpublished variant of the algorithm presented in
++    section 4.3 of [BMSS]_. Let `N/D` be the rational fraction expressing the
++    action of the isogeny on the abscissae, we compute the power series
++    `T(x) = D(1/x)/N(1/x)`, solution to the equation
++
++    .. math::
++    
++       (a_6 x^3 + a_4 x^2 + a_2 x + 1) {T'}^2 = 
++       (T/x) (\tilde{a}_6 T^3 + \tilde{a}_4 T^2 + \tilde{a}_2 T + 1) 
++       
++    with initial conditions `T = x + O(x^2)`; then we reconstruct the rational
++    fraction using the :py:func:`Berlekamp-Massey algorithm
++    <sage.matrix.berlekamp_massey.berlekamp_massey>`.
++       
++    EXAMPLES:
++    
++    ::
++    
++        sage: from sage.schemes.elliptic_curves.ell_isogeny_char_zero import isogeny_BMSS, isogeny_kernel
++
++    Here we don't know the degree of the isogeny, so we give an upper bound of
++    8; the algorithm correctly finds the degree 5 normalized isogeny::
++    
++        sage: E = EllipticCurve(GF(37), [0,0,0,1,8])
++        sage: R.<x> = GF(37)[]
++        sage: f = (x + 14) * (x + 30)
++        sage: phi = EllipticCurveIsogeny(E, f)
++        sage: E2 = phi.codomain()
++        sage: kernel = isogeny_BMSS(E, E2, 8)
++        sage: kernel
++        x^4 + 14*x^3 + x^2 + 34*x + 21
++        sage: phi2 = EllipticCurveIsogeny(E, kernel.sqrt())
++        sage: phi2.degree()
++        5
++        sage: phi == phi2
++        True
++
++    However, the output may be wrong if no isogeny of degree at most ``degree``
++    exists::
++
++        sage: E1 = EllipticCurve(GF(97), [52, 31])
++        sage: R.<x> = GF(97)[]; f = x^5 + 67*x^4 + 13*x^3 + 35*x^2 + 77*x + 69
++        sage: phi = EllipticCurveIsogeny(E1, f)
++        sage: E2 = phi.codomain()
++        sage: kernel = isogeny_BMSS(E1, E2, 9)
++        sage: kernel
++        x^8 + 36*x^7 + 95*x^6 + 84*x^4 + 16*x^3 + 70*x^2 + 12*x + 78
++        sage: kernel.is_square()
++        False
++        sage: isogeny_kernel(E1, E2, 9, algorithm="bmss")
++        Traceback (most recent call last):
++        ...
++        ValueError: The two curves are not linked by a rational normalized isogeny of degree 9
++
++    Also recall the example from :py:func:`isogeny_kernel`, showing that when
++    the bound on the degree is very low, the chances a wrong answer passing
++    the test in :py:func:`isogeny_kernel` are high::
++
++        sage: E = EllipticCurve(QQ, [0,0,0,1,0])
++        sage: E2 = EllipticCurve([0,0,0,16,0])
++        sage: f = isogeny_BMSS(E, E2, 2); f
++        x
++        sage: f.divides(E.division_polynomial(2))
++        True
++        sage: isogeny_BMSS(E, E2, 3)
++        x^2 + 4/3
++
++    Test for Trac ticket #11095::
++    
++        sage: from sage.schemes.elliptic_curves.ell_isogeny_char_zero import *
++        sage: E = EllipticCurve([-1,0])
++        sage: E2 = EllipticCurve([-3^4,0])
++        sage: E.isogeny(kernel=None, codomain=E2, degree=9)
++        Isogeny of degree 9 from Elliptic Curve defined by y^2 = x^3 - x over Rational Field to Elliptic Curve defined by y^2 = x^3 - 81*x over Rational Field
++
++    """
++    
++    (a1, a2, a3, a4, a6) = E1.a_invariants()
++    (b1, b2, b3, b4, b6) = E2.a_invariants()
++    
++    if a1 != 0 or a3 != 0 or b1 != 0 or b3 != 0:
++        raise ValueError, "Curves must have a model of the form y^2 = f(x)."
++    
++    K = E1.base_field()
++    R = PowerSeriesRing(K, 'x')
++    x = R.gen()
++    
++    G = a6*x**3 + a4*x**2 + a2*x + 1
++    H = b6*x**3 + b4*x**2 + b2*x + 1
++    
++    # solve the differential equation
++    # G(x) T'^2 = (T/x) H(T)  
++    T = _BMSS_diffeq(G, H, 2*degree + 1)
++
++    # We recover the rational fraction using the relation
++    # T == x * D.reverse() / N.reverse()
++    U = T.shift(-1) 
++    N = berlekamp_massey(U.padded_list())
++    D = (U * R(N.reverse())).truncate().reverse()
++    
++    # If the points of abscissa 0 are in the kernel,
++    # correct the degree of D
++    gap = N.degree() - D.degree() - 1
++    if (gap > 0): D = D.shift(gap)
++    
++    return D
++
++    
++def _BMSS_diffeq(G, H, prec=None):
++    r"""
++    Compute a power-series solution to the differential equation used by
++    the BMSS algorithm. The differential equation is
++
++    .. math::  P(T,x) = (T/x) H(T) - G(x) {T'}^2 = 0
++       
++    with initial conditions `T = O(x)`. The output is truncated to
++    precision ``prec``.
++    
++    :param G: a power series with non-zero constant coefficient.
++    :param H: a power series with non-zero constant coefficient.
++    :param prec: (optional) an integer denoting the truncation order of the solution.
++        If not given, it defaults to the common precision of G and H, or to the
++        default precision of the parent ring.
++    
++    :returns: the solution to the differential equation.
++    :rtype: Power series
++    
++    :raises ZeroDivisionError: when the characteristic is smaller than
++        ``2*prec-2`` and not 0.
++    :raises ValueError: when ``G`` or ``H`` is not invertible.
++    
++    ALGORITHM:
++    
++    It is a Newton iteration. After some substitution we get
++    
++    .. math::
++    
++       T_0 = ax + O(x^2)\\
++       T_{i+1} = T_i + T_i' \sqrt{G} \sqrt{x} \int \frac{k_i(x)}{2\sqrt{x}}
++       + O(x^{2^i+1}),
++    
++    where 
++    
++    .. math::
++       
++       k_i(x) = \frac{P(T_i, x)} {{T_i'}^2 G \sqrt{G}}.
++       
++    EXAMPLES::
++    
++       sage: from sage.schemes.elliptic_curves.ell_isogeny_char_zero import _BMSS_diffeq
++       
++       sage: P.<x> = PowerSeriesRing(QQ, 'x', 20)
++       sage: G = H = 0
++       sage: while not G.is_unit(): G = P.random_element() ^ 2
++       sage: while not H.is_unit(): H = P.random_element()
++       sage: T = _BMSS_diffeq(G, H)
++       sage: H(T) * T.shift(-1) - G * T.derivative()^2
++       O(x^19)
++
++    """
++    
++    # The power series ring
++    R = G.parent()
++    p = R.base_ring().characteristic()
++    
++    if not G.is_unit() or not H.is_unit():
++        raise ValueError, "No unique solution: arguments must be invertible power series."
++    
++    if prec == None:
++        prec = G.common_prec(H)
++    
++    if prec >= Infinity:
++        prec = R.default_prec()
++
++    if 0 < p and p <= 2*prec-3:
++        raise ZeroDivisionError, ("Characteristic must be greater than 2*prec - 3 = " +
++                                  str(2*prec-3) + 
++                                  " in order to compute a solution to precision 'prec'.")
++        
++    # the precision to which the solution T is known
++    d = 1
++    # 1/(T'^2 G) to precision d
++    diffT2G = G.O(1)/(H.O(1)**2)
++    # Sqrt(G) and Sqrt(1/G) to precision d
++    sqG = G.O(1).sqrt(); invsqG = ~sqG
++
++    T = (H.O(1) / G.O(1)).shift(1)
++    
++    while d < prec-1:
++        # update diffT, sqG and invsqG to precision d
++        # (nothing changes in the first iteration)
++        diffT2G = diffT2G * (2 - G * T.derivative()**2 * diffT2G)
++        sqG = (sqG + G * invsqG * (2 - sqG * invsqG)) / 2
++        invsqG = invsqG * (2 - sqG * invsqG)
++        
++        # double the current precision
++        d = min(2*d, prec-1)
++        diffT2G = R(list(diffT2G)).O(d)
++        sqG = R(list(sqG)).O(d)
++        invsqG = R(list(invsqG)).O(d)
++        T = R(list(T)).O(d+1)
++        
++        k = (H(T) * T.shift(-1) - G * T.derivative()**2) * diffT2G * invsqG
++        # K = 1/2 sqrt(x) integral(k/sqrt(x))
++        K =  R([c/(2*i+1) for (i, c) in enumerate(k)]).O(k.prec()).shift(1)
++
++        # update the solution        
++        T += T.derivative() * sqG * K 
++        
++    return T
+# HG changeset patch
+# User Luca De Feo <luca.defeo@polytechnique.edu>
+# Date 1309987917 14400
+# Node ID e04c013bf626c10afae3606bd50c1caf6f8cd2ec
+# Parent  ceecfe35f3298ee7fdb8113883b5bbafa955584f
+Still lacks char 3, and has lots of bugs.
+
+diff --git a/sage/schemes/elliptic_curves/ell_isogeny_finite_field.py b/sage/schemes/elliptic_curves/ell_isogeny_finite_field.py
+new file mode 100644
+--- /dev/null
++++ b/sage/schemes/elliptic_curves/ell_isogeny_finite_field.py
+@@ -0,0 +1,383 @@
++r"""
++Isogenies over finite fileds
++
++This modules contains algorithms to compute isogenies between elliptic curves
++specific to finite fields.
++
++AUTHORS:
++
++- Luca De Feo: 2012-07: Initial version:
++
++REFERENCES:
++
++.. [Cou96] J.-M. Couveignes, "Computing isogenies using the l-torsion".
++.. [LS08] R. Lercier and T. Sirvent, "On Elkies subgroups of l-torsion points
++   in elliptic curves defined over a finite field".
++
++"""
++
++#*****************************************************************************
++#       Copyright (C) 2012 Luca De Feo <luca.defeo@polytechnique.edu>
++#
++#  Distributed under the terms of the GNU General Public License (GPL)
++#                  http://www.gnu.org/licenses/
++#*****************************************************************************
++
++from sage.rings.finite_rings.finite_field_base import is_FiniteField
++from sage.functions.log import log
++from sage.rings.padics.factory import Qq
++from sage.rings.polynomial.polynomial_ring_constructor import PolynomialRing
++from sage.rings.power_series_ring import PowerSeriesRing
++from sage.rings.rational_field import RationalField
++from sage.matrix.berlekamp_massey import berlekamp_massey
++from sage.schemes.elliptic_curves.constructor import EllipticCurve
++from sage.databases.db_modular_polynomials import AtkinModularPolynomialDatabase
++from sage.schemes.elliptic_curves.ell_isogeny_char_zero import _BMSS_diffeq
++
++
++# The names by which the algorithms of this module may be called
++ls_names = ("Lercier-Sirvent", "lercier-sirvent", "LS", "L-S")
++algorithm_names = ls_names
++
++
++def isogeny_LS(E1, E2, ell):
++    r"""
++    Compute the kernel of an isogeny between ``E1`` and ``E2`` via
++    the Lercier-Sirvent algorithm.  There must be a rational, separable,
++    normalized isogeny of degree at most ``ell`` from ``E1`` to ``E2``.
++
++    :param E1: an elliptic curve defined over a finite field.
++    :param E2: an elliptic curve defined over a finite field.
++    :param ell: the degree of the isogeny from E1 to E2.
++
++    :returns: the squarefree polynomial vanishing on the abscissae of the kernel
++        of the isogeny.
++    :rtype: Polynomial
++
++    :raises ValueError: when no isogeny is found.
++    :raises ValueError: when the characteristic of the base field is 2.
++
++    ALGORITHM:
++
++    This function uses [LS08]_.
++
++    EXAMPLES:
++
++    """
++
++    K = E1.base_field()
++    if not is_FiniteField(K):
++        raise ValueError,\
++            "Lercier-Sirvent algorithm only works over finite fields."
++
++    params = _params(K.characteristic())
++
++    # We create a p-adic field with enough precision
++    P = PolynomialRing(RationalField(), 'X')
++    pK = Qq(K.cardinality(), modulus=P(K.polynomial()),
++            names='z', prec=params['prec'](ell));
++    rK = pK.residue_field()
++
++    # We coerce the curves into the residue field.
++    # One day Sage will know how to do this by itself...
++    E1 = EllipticCurve([rK(a.polynomial()) for a in E1.a_invariants()])
++    E2 = EllipticCurve([rK(a.polynomial()) for a in E2.a_invariants()])
++
++    # We lift the curves using Hensel lifting
++    pE1 = EllipticCurve([_lift(pK, a) for a in E1.a_invariants()])
++    pE2 = _lift_curve(pE1, E2, ell)
++
++    # We compute the power series expansion of the isogeny
++    T = params['diff_solver'](pE1, pE2, ell)
++    # We reconstruct the rational faction (denominator only)
++    D = _frac_reconst(T)
++
++    # Coerce back to the base field of the curves...
++    # I hate finite fields in Sage!
++    P = PolynomialRing(K, 'x')
++    return P([K(d.polynomial()) for d in D])
++
++
++def _params(p):
++    "Tweak parameters for the algorithms"
++    if p > 2:
++        return {
++            'prec' : lambda ell : (log(2*ell, 2)**2 / log(p, 2)).n().ceil(),
++            'diff_solver' : _diff_solve_generic
++            }
++    else:
++        return {
++            'prec' : lambda ell : log(2*ell, 2).n().floor() + 6,
++            'diff_solver' : _diff_solve_char2
++            }
++
++
++def _lift_curve(pE1, E2, ell):
++    r""" Use the ell-th modular polynomial to lift E2 to a curve
++    ell-isogenous to pE1."""
++
++    pK = pE1.base_field()
++    K = pK.residue_field()
++    p = K.characteristic()
++
++    # We take the ell-th modular polynomial
++    P = PolynomialRing(K, "F,J");
++    F, J = P.gens()
++    DB = AtkinModularPolynomialDatabase()
++    Phi = P(DB[ell])
++
++    # We find a common root in the residue field
++    # for the j-invariants of the curves
++    Phi1 = Phi(J=_reduce(K, pE1.j_invariant())).univariate_polynomial()
++    Phi2 = Phi(J=E2.j_invariant()).univariate_polynomial()
++    r = Phi1.gcd(Phi2).roots()
++    if not r:
++        raise ValueError, "Curves are not %d-isogenous" % ell
++
++    P = PolynomialRing(pK, "F,J");
++    F, J = P.gens()
++    DB = AtkinModularPolynomialDatabase()
++    Phi = P(DB[ell])
++
++    # We lift the common root
++    Phi1 = Phi(J=pE1.j_invariant()).univariate_polynomial()
++    f = _hensel(Phi1, _lift(pK, r[0][0]));
++
++    # We lift the j-invariant of E2
++    Phi2 = Phi(F=f).univariate_polynomial()
++    j = _hensel(Phi2, _lift(pK, E2.j_invariant()))
++
++    # We obtain a full model for E2 via Elkies' formulas
++    DF = f * Phi.derivative(F)(F=f, J=pE1.j_invariant())
++    DJ = pE1.j_invariant() * Phi.derivative(J)(F=f, J=pE1.j_invariant())
++    DFst = f * Phi.derivative(F)(F=f, J=j)
++    DJst = ell * j * Phi.derivative(J)(F=f, J=j)
++
++    jj = j / (j - 1728)
++    if p == 2:
++        # WARNING: This formula assumes pE1.a2 = 0
++        alpha = ( ell**2 * _sqrt(jj) * (72*pE1.a6() + pK(1)/12) *
++                  (DFst * DJ ) / (DJst * DF ) )
++        # Of the two square roots, the right one is such that
++        # 3*alpha - 1/4 has positive valuation
++        if not alpha[-1]:
++            alpha = -alpha
++        A2 = 3*alpha - pK(1)/4
++        A6 = ( ell**6 * (144*pE1.a6() + pK(1)/6)**3 * jj *
++               (DFst**3 * DJ**3) / (4 * DJst**3 * DF**3) ) - 2*alpha**3
++        pE2 =  EllipticCurve([1,A2,0,0,A6])
++    elif p == 3:
++        raise ValueError, "Characteristic 3 not implemented yet."
++    else:
++        A = ( -pK(27)/4 * ell**4 *
++               (DFst**2 * DJ**2 * pE1.a6()**2) /
++               (DJst**2 * DF**2 * pE1.a4()**2) * jj )
++        B = ( -pK(27)/4 * ell**6 *
++               (DFst**3 * DJ**3 * pE1.a6()**3) /
++               (DJst**3 * DF**3 * pE1.a4()**3) * jj )
++        pE2 =  EllipticCurve([A, B])
++
++    assert (pE2.j_invariant() - j).is_zero()
++
++    return pE2
++
++
++def _diff_solve_generic(E1, E2, ell):
++    r""" Solves the differential equation
++
++    .. math::
++
++        G {T'}^2 = \frac{T}{x} H(T)
++
++    with `T(0)=0`, using Newton's iteration.  `G` and `H` are the
++    reverse polynomials of the right hand side of the equations of
++    ``E1`` and ``E2``.
++
++    The final result is reduced to the residue field.
++    """
++
++    (a1, a2, a3, a4, a6) = E1.a_invariants()
++    (b1, b2, b3, b4, b6) = E2.a_invariants()
++
++    pK = E1.base_field()
++    K = pK.residue_field()
++    R = PowerSeriesRing(pK, 'x')
++    x = R.gen()
++    prec = 2*ell + 1
++
++    G = a6*x**3 + a4*x**2 + a2*x + 1
++    H = b6*x**3 + b4*x**2 + b2*x + 1
++
++    # Use the generic algorithm for characteristic 0
++    T = _BMSS_diffeq(G, H, prec)
++
++    R = PowerSeriesRing(K, 'x')
++    return R([_reduce(K, t) for t in T]).O(T.prec())
++
++
++def _diff_solve_char2(E1, E2, ell):
++    r""" Solves the differential equation
++
++    .. math::
++
++        G {T'}^2 = \frac{T}{x} H(T) - \frac{(xT' + T) (xT' - T)}{x}
++
++    with `T(0)=0`, using the method of undetermined coefficients
++    (quadratic algorithm).  If ``E1`` and ``E2`` have equation
++    respectively
++
++    .. math::
++
++        E_1 : y^2 + xy = f_1(x)
++
++    .. math::
++
++        E_2 : y^2 + xy = f_2(x)
++
++    `G` and `H` are the reverse polynomials of `f_1` and `f_2`.
++
++    The final result is reduced to the residue field.
++    """
++
++    (a1, a2, a3, a4, a6) = E1.a_invariants()
++    (b1, b2, b3, b4, b6) = E2.a_invariants()
++
++    pK = E1.base_field()
++    K = pK.residue_field()
++    R = PowerSeriesRing(pK, 'x')
++    x = R.gen()
++    prec = 2*ell
++
++    # The reverse of the curve equation
++    G = a6*x**3 + a2*x + 1
++    H = b6*x**3 + b2*x + 1
++
++    # We define the two operators on power series:
++    #   Dplus  = xT' + T
++    #   Dminus = xT' - T
++    Dplus  = lambda T : R([(i+1)*t/2 for (i, t) in enumerate(T)])
++    Dminus = lambda T : R([(i-1)*t/2 for (i, t) in enumerate(T)])
++
++    T = x.O(2)
++    for i in range(2, prec+1):
++        T = R(list(T)).O(i+1)
++        a = (Dplus(T) * Dminus(T)).shift(-1)
++        b = T.shift(-1) * H(T)
++        c = (b - a) - G * T.derivative()**2
++        z = c[i-1] / (2*i - 1)
++        z = z.lift_to_precision(z.parent().precision_cap() - 1)
++        T += z * x**i
++
++    R = PowerSeriesRing(K, 'x')
++    return R([_reduce(K, t) for t in T]).O(T.prec())
++
++
++def _frac_reconst(T):
++    """
++    Rational fraction reconstruction (with tweaks specific to Lercier
++    and Sirvent's algorithm).
++    """
++    R = T.parent()
++    U = T.shift(-1)
++    N = berlekamp_massey(U.padded_list())
++    D = (U * R(N.reverse())).truncate().reverse()
++
++    # If the points of abscissa 0 are in the kernel,
++    # correct the degree of D
++    gap = N.degree() - D.degree() - 1
++    if (gap > 0): D = D.shift(gap)
++
++    return D
++
++
++def _lift(pK, x):
++    "Hacking around Sage bugs"
++    if x == 0:
++        return pK(0)
++    else:
++        return pK(x).lift_to_precision(pK.precision_cap())
++
++
++def _reduce(K, x):
++    "Hacking around Sage bugs"
++    if x[0] == 0:
++        return K(0)
++    else:
++        return K(x[0])
++
++
++def _hensel(P, r):
++    "Basic Hensel lifting. P'(r) must be invertible."
++    pK = P.base_ring()
++    w = pK.uniformiser()
++    r = r.lift_to_precision(min(2*r.precision_absolute(),
++                                P[0].precision_absolute()))
++    zero = P(r)
++    v = zero.valuation()
++    if v <= 0:
++        raise ValueError, "Impossible to lift."
++    elif v >= P[0].precision_absolute():
++        return r
++    else:
++        return _hensel(P, r - zero / P.derivative()(r))
++
++
++def _sqrt(x):
++    "Very basic square root, using Hensel lifting."
++    pK = x.parent()
++    rK = pK.residue_field()
++    X = PolynomialRing(pK, 'X').gen()
++    r = _reduce(rK, x).sqrt()
++    # Horrible hack to handle precision
++    return (_hensel(X**2-x, _lift(pK, r)) +
++            pK(1).slice(1,x.precision_absolute() - 1))
++
++
++from sage.schemes.elliptic_curves.constructor import EllipticCurve_from_j
++
++def _random_test(K, ell):
++    """
++    For test purposes only. Generates two random ell-isogenous curves
++    over K, runs the algorithm and tests that the result is correct.
++    """
++    if K.characteristic() == ell:
++        raise ValueError, """Lercier-Sirvent does not work for
++        unseparable isogenies."""
++    F = None
++    while not F:
++        try:
++            E = EllipticCurve_from_j(K.random_element())
++            F = _gen_curve(E, ell)
++        except ValueError:
++            pass
++    D = isogeny_LS(E, F, ell)
++    P = D.parent().quotient(D.sqrt())
++    x = P.gen()
++    assert E.division_polynomial(ell, x).is_zero()
++
++    return E, F
++
++
++def _gen_curve(E, ell):
++    "Generate a curve ell-isogenous to E. For test purposes only"
++
++    K = E.base_field()
++    P = PolynomialRing(K, 'F,J')
++    F, J = P.gens()
++    DB = AtkinModularPolynomialDatabase()
++    Phi = P(DB[ell])
++
++    PhiN = Phi(J=E.j_invariant()).univariate_polynomial()
++    r = PhiN.roots()
++    if not r:
++        raise ValueError, 'No %d-isogenous curve.' % ell
++
++    PhiN = Phi(F=r[0][0]).univariate_polynomial()
++    X = PhiN.parent().gen()
++    PhiN = PhiN // (X - E.j_invariant())
++    r = PhiN.roots()
++
++    if not r:
++        raise ValueError, 'No %d-isogenous curve.' % ell
++
++    return EllipticCurve_from_j(r[0][0])
